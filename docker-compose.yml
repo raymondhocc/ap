@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # Frontend Development Service
+  frontend-dev:
+    build:
+      context: .
+      target: builder
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "3002:3002"
+    command: npm run dev
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:3003
+    networks:
+      - ap-network
+    depends_on:
+      - api
+
+  # Frontend Production Service
+  frontend-prod:
+    build: .
+    ports:
+      - "80:80"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - ap-network
+    depends_on:
+      - api
+
+  # API Service
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    ports:
+      - "3003:3003"
+    command: npm run dev
+    environment:
+      - NODE_ENV=development
+      - PORT=3003
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/ap_db
+      - JWT_SECRET=${JWT_SECRET:-your_jwt_secret}
+      - REDIS_URL=redis://cache:6379
+    networks:
+      - ap-network
+    depends_on:
+      - db
+      - cache
+
+  # Database Service
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=ap_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    networks:
+      - ap-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache Service
+  cache:
+    image: redis:alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ap-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin Service (Development Only)
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5050:80"
+    networks:
+      - ap-network
+    depends_on:
+      - db
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  ap-network:
+    driver: bridge
